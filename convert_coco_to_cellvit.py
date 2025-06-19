@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-COCO 형식을 CellViT++ 형식으로 변환하는 스크립트
+COCO 형식을 CellViT++ DetectionDataset 구조로 변환하는 스크립트 (파일명 일괄 변경 및 매핑 테이블 생성)
 """
 
 import json
@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import yaml
 from typing import Dict, List, Tuple, Any
 import random
+import csv
 
 class COCOToCellViTConverter:
     def __init__(
@@ -22,7 +23,7 @@ class COCOToCellViTConverter:
         coco_json_path: str, 
         images_dir: str, 
         output_dir: str,
-        val_ratio: float = 0.15,
+        val_ratio: float = 0.1,
         visualization_dir: str = None
     ):
         """
@@ -73,8 +74,6 @@ class COCOToCellViTConverter:
         dirs = [
             "train/images",
             "train/labels",
-            "test/images",
-            "test/labels",
             "splits/fold_0",
             "train_configs/ViT256"
         ]
@@ -90,7 +89,7 @@ class COCOToCellViTConverter:
     def filter_and_process_data(self):
         """데이터 필터링 및 전처리"""
         if not self.coco_data:
-            return None, None
+            return []
         
         # 이미지별 어노테이션 수집
         image_annotations = {}
@@ -247,48 +246,51 @@ class COCOToCellViTConverter:
         print(f"   - 검증 데이터: {len(val_images)}개")
         
         # 데이터 변환 및 저장
-        for phase, images in [("train", train_images), ("val", val_images)]:
-            print(f"\n🔄 {phase} 데이터 변환 중...")
+        all_filenames = []
+        filename_map = []
+        for idx, (img_info, annotations) in enumerate(tqdm(valid_images)):
+            new_stem = f"train_{idx:04d}"
+            # 이미지 복사
+            src_path = os.path.join(self.images_dir, img_info['file_name'])
+            dst_path = os.path.join(self.output_dir, "train/images", new_stem + ".png")
+            shutil.copy2(src_path, dst_path)
             
-            # 파일 목록
-            filenames = []
-            
-            for img_info, annotations in tqdm(images):
-                # 이미지 복사
-                src_path = os.path.join(self.images_dir, img_info['file_name'])
-                dst_path = os.path.join(self.output_dir, "train/images", img_info['file_name'])
-                shutil.copy2(src_path, dst_path)
-                
-                # 레이블 파일 생성
-                label_content = self.create_cellvit_label(annotations)
-                label_path = os.path.join(
-                    self.output_dir,
-                    "train/labels",
-                    os.path.splitext(img_info['file_name'])[0] + ".csv"
-                )
-                with open(label_path, 'w') as f:
-                    f.write(label_content)
-                
-                # 파일 목록에 추가
-                filenames.append(os.path.splitext(img_info['file_name'])[0])
-                
-                # 시각화 (샘플)
-                if self.visualization_dir and len(filenames) <= 5:
-                    vis_path = os.path.join(
-                        self.visualization_dir,
-                        phase,
-                        f"{os.path.splitext(img_info['file_name'])[0]}_vis.png"
-                    )
-                    self.visualize_sample(src_path, annotations, vis_path)
-            
-            # Split 파일 저장
-            split_path = os.path.join(
+            # 레이블 파일 생성
+            label_content = self.create_cellvit_label(annotations)
+            label_path = os.path.join(
                 self.output_dir,
-                "splits/fold_0",
-                "train.csv" if phase == "train" else "val.csv"
+                "train/labels",
+                new_stem + ".csv"
             )
-            with open(split_path, 'w') as f:
-                f.write("\n".join(filenames))
+            with open(label_path, 'w') as f:
+                f.write(label_content)
+            
+            # 파일 목록에 추가
+            all_filenames.append(new_stem)
+            filename_map.append((img_info['file_name'], new_stem + ".png"))
+            
+            # 시각화 (샘플)
+            if self.visualization_dir and len(all_filenames) <= 5:
+                vis_path = os.path.join(
+                    self.visualization_dir,
+                    "train",
+                    f"{new_stem}_vis.png"
+                )
+                self.visualize_sample(src_path, annotations, vis_path)
+        
+        # Split 파일 저장
+        train_filenames = [f"train_{valid_images.index(x):04d}" for x in train_images]
+        val_filenames = [f"train_{valid_images.index(x):04d}" for x in val_images]
+        with open(os.path.join(self.output_dir, "splits/fold_0/train.csv"), 'w') as f:
+            f.write("\n".join(train_filenames))
+        with open(os.path.join(self.output_dir, "splits/fold_0/val.csv"), 'w') as f:
+            f.write("\n".join(val_filenames))
+        
+        # 매핑 테이블 저장
+        with open(os.path.join(self.output_dir, "filename_map.csv"), "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["original_name", "new_name"])
+            writer.writerows(filename_map)
         
         # 레이블 맵 생성
         self.create_label_map()
@@ -313,7 +315,7 @@ def main():
         coco_json_path=coco_json_path,
         images_dir=images_dir,
         output_dir=output_dir,
-        val_ratio=0.15,  # 15% for validation
+        val_ratio=0.1,
         visualization_dir=visualization_dir
     )
     

@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 from typing import Dict, List, Tuple, Any
 import argparse
+from tqdm import tqdm
 
 class COCODatasetAnalyzer:
     def __init__(self, coco_json_path: str, images_dir: str):
