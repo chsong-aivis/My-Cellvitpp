@@ -206,10 +206,12 @@ class ExperimentCellVitClassifier(BaseExperiment):
         self.logger.info(f"Using device: {device}")
 
         # loss functions
+        # Enable weighted sampling if class_weights is defined
+        weighted_sampling = "class_weights" in self.run_conf["training"]
         loss_fn = self.get_loss_fn(
-            weighted_sampling=self.run_conf["training"].get("weighted_sampling", False),
+            weighted_sampling=weighted_sampling,
             weight_factor=self.run_conf["training"].get("weight_factor", 5),
-            weight_list=self.run_conf["training"].get("weight_list", 5),
+            weight_list=self.run_conf["training"].get("weight_list", None),
         )
         self.logger.info("Loss function:")
         self.logger.info(loss_fn)
@@ -375,7 +377,13 @@ class ExperimentCellVitClassifier(BaseExperiment):
             Callable: CrossEntropyLoss
         """
         if weighted_sampling:
-            if self.run_conf["data"]["dataset"].lower() in [
+            # Check if class_weights is defined in config
+            if "class_weights" in self.run_conf["training"]:
+                class_weights = torch.Tensor(self.run_conf["training"]["class_weights"])
+                self.logger.info(f"Using class weights from config: {class_weights}")
+                # Use PyTorch's CrossEntropyLoss directly with weights
+                loss_fn = nn.CrossEntropyLoss(weight=class_weights)
+            elif self.run_conf["data"]["dataset"].lower() in [
                 "lizard_preextracted",
                 "lizard",
                 "panoptils",

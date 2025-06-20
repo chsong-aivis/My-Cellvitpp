@@ -1,0 +1,75 @@
+# Training configuration for custom dataset
+
+# Random seed for reproducibility
+random_seed: 42
+
+# GPU configuration
+gpu: 0  # GPU ID to use
+
+# CellViT model path
+cellvit_path: "./checkpoints/classifier/CellViT-SAM-H-x40-AMP-002.pth"  # Base CellViT model path
+
+# Dataset configuration
+data:
+  dataset: DetectionDataset
+  dataset_path: ./Dataset_Old
+  normalize_stains_train: false
+  normalize_stains_val: false
+  num_classes: 5  # 실제 클래스 수로 수정
+  image_size: 512  # Input image size
+  train_filelist: ./Dataset_Old/splits/fold_0/train.csv
+  val_filelist: ./Dataset_Old/splits/fold_0/val.csv
+  label_map:
+    0: '0'
+    1: '1+'
+    2: '2+'
+    3: '3+'
+    4: 'nt'
+
+# Model configuration
+model:
+  name: "cellvit"  # Model name
+  backbone: "sam-h"  # Backbone architecture (SAM-H)
+  pretrained: true  # Use pretrained weights
+  checkpoint_path: "./checkpoints/classifier/CellViT-SAM-H-x40-AMP-002.pth"  # Path to classifier checkpoint
+  parameters:
+    hidden_dim: 256
+
+# Training configuration
+training:
+  batch_size: 32  # Batch size
+  epochs: 20  # Number of epochs (빠른 테스트를 위해 20으로 수정)
+  optimizer: AdamW  # Optimizer
+  optimizer_hyperparameter:
+    betas: [0.85, 0.9]
+    lr: 0.0001  # Initial learning rate
+    weight_decay: 0.0001  # Weight decay
+  scheduler:
+    scheduler_type: cosine
+    name: cosine
+    parameters:
+      T_max: 20  # epoch 수에 맞춰 수정
+      eta_min: 0.000001
+  early_stopping_patience: 20  # Early stopping patience
+  gradient_clip_val: 1.0  # Gradient clipping value
+  cache_cell_dataset: true
+  drop_rate: 0.1
+  mixed_precision: true
+  eval_every: 1
+  # 클래스 불균형을 고려한 가중치 추가
+  class_weights: [8.1, 6.8, 14.9, 5.8, 2.0]  # 1/frequency로 계산된 가중치
+
+# Hardware configuration
+hardware:
+  num_workers: 4  # Number of data loading workers
+
+# Logging configuration
+logging:
+  mode: offline
+  project: cellvit_custom
+  notes: custom training
+  log_comment: custom training with single GPU
+  wandb_dir: ./logs_sam
+  log_dir: ./logs_sam
+  level: Debug
+
