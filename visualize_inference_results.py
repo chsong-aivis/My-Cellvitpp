@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import cv2
 from collections import Counter
+import json
+import openslide
+import matplotlib.patches as patches
 
 # Define color map for each class
 CLASS_COLORS = {
@@ -128,6 +131,68 @@ def visualize_results(val_dataset_path, inference_results_path1, inference_resul
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
 
+# 1. WSI 썸네일 추출
+def get_thumbnail(svs_path, scale_factor=32):
+    slide = openslide.OpenSlide(svs_path)
+    thumbnail = slide.get_thumbnail((slide.dimensions[0] // scale_factor, slide.dimensions[1] // scale_factor))
+    return slide, thumbnail
+
+# 2. backbone 결과 로드
+def load_cells(json_path):
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    return data['cells']  # cells 배열만 반환
+
+# 3. 시각화 함수
+def visualize_cells_on_wsi(slide, thumbnail, cells, save_path):
+    scale_x = thumbnail.size[0] / slide.dimensions[0]
+    scale_y = thumbnail.size[1] / slide.dimensions[1]
+    thumb_np = np.array(thumbnail)
+
+    fig, ax = plt.subplots(figsize=(15, 15))
+    ax.imshow(thumb_np)
+
+    for cell in cells:
+        # 중심점 - centroid는 [y, x] 형태
+        centroid_y = float(cell['centroid'][0])
+        centroid_x = float(cell['centroid'][1])
+        offset_y = float(cell['offset_global'][0])
+        offset_x = float(cell['offset_global'][1])
+        
+        # global 좌표 계산
+        y_global = centroid_y + offset_y
+        x_global = centroid_x + offset_x
+        
+        # 썸네일 좌표로 변환
+        x_thumb = x_global * scale_x
+        y_thumb = y_global * scale_y
+        
+        cell_type = cell.get('type', 0)
+        ax.scatter(x_thumb, y_thumb, c=f'C{cell_type%10}', s=5, alpha=0.7)
+        
+        # bbox - bbox는 [[x1, y1], [x2, y2]] 형태
+        bbox = cell['bbox']
+        x1, y1 = float(bbox[0][0]), float(bbox[0][1])
+        x2, y2 = float(bbox[1][0]), float(bbox[1][1])
+        
+        # global 좌표로 변환
+        x1g = (x1 + offset_x) * scale_x
+        y1g = (y1 + offset_y) * scale_y
+        x2g = (x2 + offset_x) * scale_x
+        y2g = (y2 + offset_y) * scale_y
+        
+        # bbox 그리기
+        rect = patches.Rectangle((x1g, y1g), x2g-x1g, y2g-y1g, 
+                               linewidth=0.5, edgecolor=f'C{cell_type%10}', 
+                               facecolor='none', alpha=0.5)
+        ax.add_patch(rect)
+
+    plt.title('CellViT Backbone Cell Detection Results (Centroid + BBox)')
+    plt.axis('off')
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200)
+    plt.show()
+
 if __name__ == "__main__":
     val_dataset_path = "Validation_Dataset"
     inference_results_path1 = "inference_results/inference_results.csv"  # No weights
@@ -135,4 +200,12 @@ if __name__ == "__main__":
     output_path = "inference_results/model_comparison.png"
     
     visualize_results(val_dataset_path, inference_results_path1, inference_results_path2, output_path)
-    print(f"Visualization saved to {output_path}") 
+    print(f"Visualization saved to {output_path}")
+
+    svs_path = './test_database/x40_svs/JP2K-33003-2.svs'
+    json_path = './backbone_test_results/JP2K-33003-2_cells.json'
+    save_path = './backbone_test_results/JP2K-33003-2_cells_viz_bbox.png'
+
+    slide, thumbnail = get_thumbnail(svs_path)
+    cells = load_cells(json_path)
+    visualize_cells_on_wsi(slide, thumbnail, cells, save_path) 
